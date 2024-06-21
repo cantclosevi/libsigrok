@@ -27,33 +27,53 @@ static const struct dslogic_profile supported_device[] = {
 	{ 0x2a0e, 0x0001, "DreamSourceLab", "DSLogic", NULL,
 		"dreamsourcelab-dslogic-fx2.fw",
 		0, "DreamSourceLab", "DSLogic", 256 * 1024 * 1024, 100,
-		512, DS_API_V1, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
+		512, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
 	/* DreamSourceLab DSCope */
 	{ 0x2a0e, 0x0002, "DreamSourceLab", "DSCope", NULL,
 		"dreamsourcelab-dscope-fx2.fw",
 		0, "DreamSourceLab", "DSCope", 256 * 1024 * 1024, 100,
-		512, DS_API_V1, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
+		512, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
 	/* DreamSourceLab DSLogic Pro */
 	{ 0x2a0e, 0x0003, "DreamSourceLab", "DSLogic Pro", NULL,
 		"dreamsourcelab-dslogic-pro-fx2.fw",
 		0, "DreamSourceLab", "DSLogic", 256 * 1024 * 1024, 100,
-		512, DS_API_V1, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
+		512, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
 	/* DreamSourceLab DSLogic Plus */
 	{ 0x2a0e, 0x0020, "DreamSourceLab", "DSLogic Plus", NULL,
 		"dreamsourcelab-dslogic-plus-fx2.fw",
 		0, "DreamSourceLab", "DSLogic", 256 * 1024 * 1024, 100,
-		512, DS_API_V1, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
+		512, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
 	/* DreamSourceLab DSLogic Basic */
 	{ 0x2a0e, 0x0021, "DreamSourceLab", "DSLogic Basic", NULL,
 		"dreamsourcelab-dslogic-basic-fx2.fw",
 		0, "DreamSourceLab", "DSLogic", 256 * 1024, 100,
-		512, DS_API_V1, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
+		512, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
 	/* DreamSourceLab DSLogic U3Pro16 */
 	{ 0x2a0e, 0x002a, "DreamSourceLab", "DSLogic U3Pro16", NULL,
 		"dreamsourcelab-dslogic-basic-fx2.fw",
-		DSLOGIC_CAPS_ADF4360, "DreamSourceLab", "DSLogic", 
+		DSLOGIC_CAPS_ADF4360 | DSLOGIC_CAPS_USB30, "DreamSourceLab", "DSLogic", 
 		2ULL * 1024ULL * 1024ULL * 1024ULL, 40,
-		1024, DS_API_V2, SR_MHZ(500), SR_MHZ(500), SR_GHZ(1), 5},
+		1024, SR_MHZ(500), SR_MHZ(500), SR_GHZ(1), 5},
+	/* DreamSourceLab DSLogic Plus V2*/
+	{ 0x2a0e, 0x0030, "DreamSourceLab", "DSLogic Plus V2", NULL,
+    	"dreamsourcelab-dslogic-plus-fx2.fw",
+		CAPS_FEATURE_SECURITY, "DreamSourceLab", "DSLogic", 256 * 1024 * 1024, 100,
+		512, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
+	/* DreamSourceLab DSLogic Basic V2*/
+	{ 0x2a0e, 0x0031, "DreamSourceLab", "DSLogic Basic V2", NULL,
+    	"dreamsourcelab-dslogic-basic-fx2.fw",
+		CAPS_FEATURE_SECURITY, "DreamSourceLab", "DSLogic", 256 * 1024 * 1024, 100,
+		512, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
+	/* DreamSourceLab DSLogic Plus V3*/
+	{ 0x2a0e, 0x0034, "DreamSourceLab", "DSLogic Plus V3", NULL,
+    	"dreamsourcelab-dslogic-plus-fx2.fw",
+		CAPS_FEATURE_SECURITY, "DreamSourceLab", "DSLogic", 256 * 1024 * 1024, 100,
+		512, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
+	/* DreamSourceLab DSLogic Basic V3*/
+	{ 0x2a0e, 0x0035, "DreamSourceLab", "DSLogic Basic V3", NULL,
+    	"dreamsourcelab-dslogic-basic-fx2.fw",
+		CAPS_FEATURE_SECURITY, "DreamSourceLab", "DSLogic", 256 * 1024 * 1024, 100,
+		512, SR_MHZ(100), SR_MHZ(200), SR_MHZ(400), 1},
 
 	ALL_ZERO
 };
@@ -160,8 +180,8 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 	struct sr_channel_group *cg;
 	struct sr_config *src;
 	const struct dslogic_profile *prof;
+	enum dslogic_api_version api_version;
 	GSList *l, *devices, *conn_devices;
-	gboolean has_firmware;
 	struct libusb_device_descriptor des;
 	libusb_device **devlist;
 	struct libusb_device_handle *hdl;
@@ -293,14 +313,11 @@ static GSList *scan(struct sr_dev_driver *di, GSList *options)
 			devc->num_samplerates = ARRAY_SIZE(samplerates);
 
 		}
-		if (devc->profile->api_version == DS_API_V1)
-			has_firmware = usb_match_manuf_prod(devlist[i], "DreamSourceLab", "USB-based Instrument");
-		else
-			has_firmware = usb_match_manuf_prod(devlist[i], "DreamSourceLab", "USB-based DSL Instrument v2");
+		api_version = dslogic_detect_api_version(devlist[i]);
 
-		if (has_firmware) {
+		if (api_version != DS_API_V_UNKNOWN) {
 			/* Already has the firmware, so fix the new address. */
-			sr_dbg("Found a DSLogic device.");
+			sr_dbg("Found a DSLogic device with API version %d", api_version);
 			sdi->status = SR_ST_INACTIVE;
 			sdi->inst_type = SR_INST_USB;
 			sdi->conn = sr_usb_dev_inst_new(libusb_get_bus_number(devlist[i]),
@@ -338,7 +355,6 @@ static int dev_open(struct sr_dev_inst *sdi)
 
 	devc = sdi->priv;
 	usb = sdi->conn;
-
 	/*
 	 * If the firmware was recently uploaded, wait up to MAX_RENUM_DELAY_MS
 	 * milliseconds for the FX2 to renumerate.
@@ -374,6 +390,7 @@ static int dev_open(struct sr_dev_inst *sdi)
 	}
 
 	ret = libusb_claim_interface(usb->devhdl, USB_INTERFACE);
+	
 	if (ret != 0) {
 		switch (ret) {
 		case LIBUSB_ERROR_BUSY:
@@ -406,6 +423,24 @@ static int dev_open(struct sr_dev_inst *sdi)
 		ret = dslogic_set_voltage_threshold(sdi, devc->cur_threshold);
 	}
 	devc->continuous_mode = TRUE;
+
+	 // check security
+    uint16_t encryption[SECU_STEPS];
+    ret = dsl_wr_reg(sdi, CTR0_ADDR, bmNONE); // dessert clear
+    if (dsl_rd_nvm(sdi, (unsigned char *)encryption, SECU_EEP_ADDR, SECU_STEPS*2) != SR_OK) {
+        sr_err("%s:%d, Read EEPROM content failed!",
+            __func__, __LINE__);
+        return SR_ERR;
+    }
+
+    if (devc->profile->dev_caps & CAPS_FEATURE_SECURITY) {
+        ret = dsl_secuCheck(sdi, encryption, SECU_STEPS);
+        if (ret != SR_OK){
+            sr_err("Security check failed!");
+        } else {
+            sr_err("Security check pass!");
+        }
+    }
 
 	return ret;
 }

@@ -112,6 +112,16 @@ ATTRS{idVendor}=="2a0e", ATTRS{idProduct}=="0002", ENV{ID_SIGROK}="1"
 ATTRS{idVendor}=="2a0e", ATTRS{idProduct}=="0020", ENV{ID_SIGROK}="1"
 # DreamSourceLab DSLogic Basic
 ATTRS{idVendor}=="2a0e", ATTRS{idProduct}=="0021", ENV{ID_SIGROK}="1"
+# DreamSourceLab DSLogic U3Pro16
+ATTRS{idVendor}=="2a0e", ATTRS{idProduct}=="002a", ENV{ID_SIGROK}="1"
+# DreamSourceLab DSLogic Plus V2
+ATTRS{idVendor}=="2a0e", ATTRS{idProduct}=="0030", ENV{ID_SIGROK}="1"
+# DreamSourceLab DSLogic Basic V2
+ATTRS{idVendor}=="2a0e", ATTRS{idProduct}=="0031", ENV{ID_SIGROK}="1"
+# DreamSourceLab DSLogic Plus V3
+ATTRS{idVendor}=="2a0e", ATTRS{idProduct}=="0034", ENV{ID_SIGROK}="1"
+# DreamSourceLab DSLogic Basic V3
+ATTRS{idVendor}=="2a0e", ATTRS{idProduct}=="0035", ENV{ID_SIGROK}="1"
 
 # GW-Instek GDM-9061 (USBTMC mode)
 ATTRS{idVendor}=="2184", ATTRS{idProduct}=="0059", ENV{ID_SIGROK}="1"
@@ -270,8 +280,9 @@ ATTRS{idVendor}=="21a9", ATTRS{idProduct}=="1006", ENV{ID_SIGROK}="1"
 
 # Siglent USBTMC devices.
 # f4ec:ee3a: E.g. SDS1052DL+ scope
-# f4ec:ee38: E.g. SDS1104X-E scope
+# f4ec:ee38: E.g. SDS1104X-E scope or SDM3055 Multimeter
 # f4ed:ee3a: E.g. SDS1202X-E scope or SDG1010 waveform generator
+ATTRS{idVendor}=="f4ec", ATTRS{idProduct}=="ee38", ENV{ID_SIGROK}="1"
 ATTRS{idVendor}=="f4ec", ATTRS{idProduct}=="ee3a", ENV{ID_SIGROK}="1"
 ATTRS{idVendor}=="f4ed", ATTRS{idProduct}=="ee3a", ENV{ID_SIGROK}="1"
 

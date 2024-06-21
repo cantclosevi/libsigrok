@@ -20,6 +20,7 @@
 
 #include <config.h>
 #include <math.h>
+#include <assert.h>
 #include <stdbool.h>
 #include <glib.h>
 #include <glib/gstdio.h>
@@ -108,15 +109,15 @@
  */
 #define _DS_CFG(variable, wordcnt) ((variable << 8) | wordcnt)
 #define DS_CFG_START			0xf5a5f5a5
-#define DS_CFG_MODE			_DS_CFG(0, 1)
+#define DS_CFG_MODE				_DS_CFG(0, 1)
 #define DS_CFG_DIVIDER			_DS_CFG(1, 2)
 #define DS_CFG_COUNT			_DS_CFG(3, 2)
 #define DS_CFG_TRIG_POS			_DS_CFG(5, 2)
 #define DS_CFG_TRIG_GLB			_DS_CFG(7, 1)
 #define DS_CFG_CH_EN			_DS_CFG(8, 1)
 #define DS_CFG_CH_EN_V2			_DS_CFG(10, 2)
-#define DS_CFG_TRIG			_DS_CFG(64, 160)
-#define DS_CFG_END			0xfa5afa5a
+#define DS_CFG_TRIG				_DS_CFG(64, 160)
+#define DS_CFG_END				0xfa5afa5a
 
 #pragma pack(push, 1)
 
@@ -233,8 +234,26 @@ static const struct vco_config vco_init_config[] = {
 	{0, 0, 0, {0, 0, 0, 0}}
 };
 
+SR_PRIV int dsl_secuReset(const struct sr_dev_inst *sdi);
+SR_PRIV int dsl_secuWrite(const struct sr_dev_inst *sdi, uint16_t cmd, uint16_t din);
+SR_PRIV gboolean dsl_isSecuReady(const struct sr_dev_inst *sdi);
+SR_PRIV gboolean dsl_isSecuPass(const struct sr_dev_inst *sdi);
+SR_PRIV uint16_t dsl_secuRead(const struct sr_dev_inst *sdi);
+
+struct ctl_wr_cmd {
+    struct ctl_header header;
+    uint8_t data[60];
+};
+
+struct ctl_rd_cmd {
+    struct ctl_header header;
+    uint8_t *data;
+};
+
 #pragma pack(pop)
 
+SR_PRIV int command_ctl_wr(libusb_device_handle *devhdl, struct ctl_wr_cmd cmd);
+SR_PRIV int command_ctl_rd(libusb_device_handle *devhdl, struct ctl_rd_cmd cmd);
 /*
  * This should be larger than the FPGA bitstream image so that it'll get
  * uploaded in one big operation. There seem to be issues when uploading
@@ -334,7 +353,7 @@ static int command_get_fw_version(struct sr_dev_inst *sdi,
 	libusb_device_handle *devhdl = usb->devhdl;
 	int ret;
 
-	if (devc->profile->api_version == DS_API_V2)
+	if (devc->api_version == DS_API_V2)
 		return command_read(devhdl,	DSL_CTL_FW_VERSION,
 				sizeof(struct version_info), (uint8_t *)vi);
 
@@ -357,7 +376,7 @@ static int command_get_revid_version(struct sr_dev_inst *sdi, uint8_t *revid)
 	struct dev_context *devc = sdi->priv;
 	libusb_device_handle *devhdl = usb->devhdl;
 
-	if (devc->profile->api_version == DS_API_V2)
+	if (devc->api_version == DS_API_V2)
 		return command_read(devhdl,	DSL_CTL_REVID_VERSION,
 				sizeof(uint8_t), revid);
 	int ret;
@@ -412,7 +431,7 @@ static int command_start_acquisition(const struct sr_dev_inst *sdi)
 	devc = sdi->priv;
 	usb = sdi->conn;
 
-	if (devc->profile->api_version == DS_API_V1) {
+	if (devc->api_version == DS_API_V1) {
 		mode.flags = DS_START_FLAGS_MODE_LA | DS_START_FLAGS_SAMPLE_WIDE;
 		mode.sample_delay_h = mode.sample_delay_l = 0;
 
@@ -445,7 +464,7 @@ static int command_stop_acquisition(const struct sr_dev_inst *sdi)
 	mode.sample_delay_h = mode.sample_delay_l = 0;
 
 	usb = sdi->conn;
-	if (devc->profile->api_version == DS_API_V1) {
+	if (devc->api_version == DS_API_V1) {
 		ret = libusb_control_transfer(usb->devhdl, LIBUSB_REQUEST_TYPE_VENDOR |
 				LIBUSB_ENDPOINT_OUT, DS_CMD_START, 0x0000, 0x0000,
 				(unsigned char *)&mode, sizeof(struct dslogic_mode), USB_TIMEOUT);
@@ -611,16 +630,24 @@ SR_PRIV int dslogic_fpga_firmware_upload(const struct sr_dev_inst *sdi)
 			name = DSLOGIC_FPGA_FIRMWARE_3V3;
 		else
 			name = DSLOGIC_FPGA_FIRMWARE_5V;
-	} else if (!strcmp(devc->profile->model, "DSLogic Pro")){
+	} else if (!strcmp(devc->profile->model, "DSLogic Pro")) {
 		name = DSLOGIC_PRO_FPGA_FIRMWARE;
-	} else if (!strcmp(devc->profile->model, "DSLogic Plus")){
+	} else if (!strcmp(devc->profile->model, "DSLogic Plus")) {
 		name = DSLOGIC_PLUS_FPGA_FIRMWARE;
-	} else if (!strcmp(devc->profile->model, "DSLogic Basic")){
+	} else if (!strcmp(devc->profile->model, "DSLogic Basic")) {
 		name = DSLOGIC_BASIC_FPGA_FIRMWARE;
 	} else if (!strcmp(devc->profile->model, "DSCope")) {
 		name = DSCOPE_FPGA_FIRMWARE;
 	} else if (!strcmp(devc->profile->model, "DSLogic U3Pro16")) {
 		name = DSLOGIC_U3PRO16_FPGA_FIRMWARE;
+	} else if (!strcmp(devc->profile->model, "DSLogic Plus V2")) {
+		name = DSLOGIC_PLUS_V2_FPGA_FIRMWARE;
+	} else if (!strcmp(devc->profile->model, "DSLogic Basic V2")) {
+		name = DSLOGIC_BASIC_V2_FPGA_FIRMWARE;
+	} else if (!strcmp(devc->profile->model, "DSLogic Plus V3")) {
+		name = DSLOGIC_PLUS_V3_FPGA_FIRMWARE;
+	} else if (!strcmp(devc->profile->model, "DSLogic Basic V3")) {
+		name = DSLOGIC_BASIC_V3_FPGA_FIRMWARE;
 	} else {
 		sr_err("Failed to select FPGA firmware.");
 		return SR_ERR;
@@ -633,7 +660,7 @@ SR_PRIV int dslogic_fpga_firmware_upload(const struct sr_dev_inst *sdi)
 	if (result != SR_OK)
 		return result;
 
-	if (devc->profile->api_version == DS_API_V2) {
+	if (devc->api_version == DS_API_V2) {
 		result = fpga_firmware_upload_v2(usb->devhdl, drvc->sr_ctx,
 									&bitstream);
 		if (result != SR_OK) {
@@ -808,7 +835,7 @@ static bool set_trigger(const struct sr_dev_inst *sdi, struct fpga_config_common
 		}
 	}
 
-	if (devc->profile->api_version == DS_API_V1)
+	if (devc->api_version == DS_API_V1)
 		cfg->trig_glb = (num_enabled_channels << 4);
 	else
 		cfg->trig_glb = (num_enabled_channels << 8);
@@ -820,7 +847,7 @@ static bool set_trigger(const struct sr_dev_inst *sdi, struct fpga_config_common
 static int fpga_config_size(const struct sr_dev_inst *sdi)
 {
 	const struct dev_context *const devc = sdi->priv;
-	if (devc->profile->api_version == DS_API_V1) {
+	if (devc->api_version == DS_API_V1) {
 		return sizeof(struct fpga_config_v1);
 	} else {
 		return sizeof(struct fpga_config_v2);
@@ -840,7 +867,7 @@ static int fpga_configure(const struct sr_dev_inst *sdi)
 
 	sr_dbg("Configuring FPGA.");
 
-	if (devc->profile->api_version == DS_API_V1) {
+	if (devc->api_version == DS_API_V1) {
 		struct fpga_config_v1 * v1_cfg;
 		cfg_buffer = g_malloc0(sizeof(struct fpga_config_v1));
 		v1_cfg = (struct fpga_config_v1 *)cfg_buffer;
@@ -866,13 +893,24 @@ static int fpga_configure(const struct sr_dev_inst *sdi)
 	WL16(&cfg->trig_glb_header, DS_CFG_TRIG_GLB);
 	WL16(&cfg->trig_header, DS_CFG_TRIG);
 
+	if ((devc->profile->dev_caps & DSLOGIC_CAPS_USB30) == 0) {
+		uint8_t cmd;
+		cmd = DS_WR_WORDWIDE;
+		ret = command_write(usb->devhdl, DSL_CTL_WORDWIDE, sizeof(uint8_t), &cmd);
+		if (ret != SR_OK) {
+			sr_err("Failed to set GPIF to be wordwide.");
+			g_free(cfg_buffer);
+			return ret;
+		}
+	}
+
 	/* Pass in the length of a fixed-size struct. Really. */
 	len = fpga_config_size(sdi) / 2;
 	c[0] = len & 0xff;
 	c[1] = (len >> 8) & 0xff;
 	c[2] = (len >> 16) & 0xff;
 
-	if (devc->profile->api_version == DS_API_V1) {
+	if (devc->api_version == DS_API_V1) {
 		ret = libusb_control_transfer(usb->devhdl, LIBUSB_REQUEST_TYPE_VENDOR |
 				LIBUSB_ENDPOINT_OUT, DS_CMD_SETTING, 0x0000, 0x0000,
 				c, sizeof(c), USB_TIMEOUT);
@@ -950,7 +988,7 @@ static int fpga_configure(const struct sr_dev_inst *sdi)
 		return SR_ERR;
 	}
 
-	if (devc->profile->api_version == DS_API_V2) {
+	if (devc->api_version == DS_API_V2) {
 		/* assert INTRDY high to indicate data end) */
 		c[0] = DS_WR_INTRDY;
 		if (command_write(usb->devhdl, DSL_CTL_INTRDY, 1, c) != SR_OK) {
@@ -982,7 +1020,7 @@ SR_PRIV int dslogic_set_voltage_threshold(const struct sr_dev_inst *sdi, double 
 	const uint16_t cmd = value | (DS_ADDR_VTH << 8);
 
 	/* Send the control command. */
-	if (devc->profile->api_version == DS_API_V1) {
+	if (devc->api_version == DS_API_V1) {
 		ret = libusb_control_transfer(usb->devhdl,
 				LIBUSB_REQUEST_TYPE_VENDOR | LIBUSB_ENDPOINT_OUT,
 				DS_CMD_WR_REG, 0x0000, 0x0000,
@@ -1000,6 +1038,15 @@ SR_PRIV int dslogic_set_voltage_threshold(const struct sr_dev_inst *sdi, double 
 	devc->cur_threshold = threshold;
 
 	return SR_OK;
+}
+
+SR_PRIV enum dslogic_api_version dslogic_detect_api_version(libusb_device *usbdev)
+{
+	if (usb_match_manuf_prod(usbdev, "DreamSourceLab", "USB-based Instrument"))
+		return DS_API_V1;
+	if (usb_match_manuf_prod(usbdev, "DreamSourceLab", "USB-based DSL Instrument v2"))
+		return DS_API_V2;
+	return DS_API_V_UNKNOWN;
 }
 
 SR_PRIV int dslogic_dev_open(struct sr_dev_inst *sdi, struct sr_dev_driver *di)
@@ -1069,6 +1116,12 @@ SR_PRIV int dslogic_dev_open(struct sr_dev_inst *sdi, struct sr_dev_driver *di)
 			}
 		}
 
+		devc->api_version = dslogic_detect_api_version(devlist[i]);
+		if (devc->api_version == DS_API_V_UNKNOWN) {
+			sr_err("Failed to determine API version.");
+			break;
+		}
+
 		ret = command_get_fw_version(sdi, &vi);
 		if (ret != SR_OK) {
 			sr_err("Failed to get firmware version.");
@@ -1086,7 +1139,7 @@ SR_PRIV int dslogic_dev_open(struct sr_dev_inst *sdi, struct sr_dev_driver *di)
 		 * bail out if we encounter an incompatible version.
 		 * Different minor versions are OK, they should be compatible.
 		 */
-		req_major_version = (devc->profile->api_version == DS_API_V1) ?
+		req_major_version = (devc->api_version == DS_API_V1) ?
 									DSLOGIC_REQUIRED_VERSION_MAJOR_V1 : 
 									DSLOGIC_REQUIRED_VERSION_MAJOR_V2;
 		if (vi.major != req_major_version) {
@@ -1098,9 +1151,9 @@ SR_PRIV int dslogic_dev_open(struct sr_dev_inst *sdi, struct sr_dev_driver *di)
 		}
 
 		sr_info("Opened device on %d.%d (logical) / %s (physical), "
-			"interface %d, firmware %d.%d.",
+			"interface %d, firmware %d.%d, API version %d.",
 			usb->bus, usb->address, connection_id,
-			USB_INTERFACE, vi.major, vi.minor);
+			USB_INTERFACE, vi.major, vi.minor, devc->api_version);
 
 		sr_info("Detected REVID=%d, it's a Cypress CY7C68013%s.",
 			revid, (revid != 1) ? " (FX2)" : "A (FX2LP)");
@@ -1377,6 +1430,7 @@ static void LIBUSB_CALL receive_transfer(struct libusb_transfer *transfer)
 	gboolean packet_has_error = FALSE;
 	gboolean abort = FALSE;
 
+	sr_dbg("test recieve transfer");
 	/*
 	 * If acquisition has already ended, just free any queued up
 	 * transfer that come in.
@@ -1665,15 +1719,13 @@ SR_PRIV int dslogic_acquisition_start(const struct sr_dev_inst *sdi)
 	tpos = g_malloc(devc->profile->block_size);
 	transfer = libusb_alloc_transfer(0);
 	libusb_fill_bulk_transfer(transfer, usb->devhdl, 6 | LIBUSB_ENDPOINT_IN,
-			(unsigned char *)tpos, devc->profile->block_size,
-			trigger_receive, (void *)sdi, 0);
+			(unsigned char *)tpos, devc->profile->block_size, trigger_receive, (void *)sdi, 0);
 	if ((ret = libusb_submit_transfer(transfer)) < 0) {
 		sr_err("Failed to request trigger: %s.", libusb_error_name(ret));
 		libusb_free_transfer(transfer);
 		g_free(tpos);
 		return SR_ERR;
 	}
-
 	devc->transfers = g_try_malloc0(sizeof(*devc->transfers));
 	if (!devc->transfers) {
 		sr_err("USB trigger_pos transfer malloc failed.");
@@ -1682,7 +1734,6 @@ SR_PRIV int dslogic_acquisition_start(const struct sr_dev_inst *sdi)
 	devc->num_transfers = 1;
 	devc->submitted_transfers++;
 	devc->transfers[0] = transfer;
-
 	return ret;
 }
 
@@ -1691,4 +1742,225 @@ SR_PRIV int dslogic_acquisition_stop(struct sr_dev_inst *sdi)
 	command_stop_acquisition(sdi);
 	abort_acquisition(sdi->priv);
 	return SR_OK;
+}
+
+
+SR_PRIV int dsl_rd_nvm(const struct sr_dev_inst *sdi, unsigned char *ctx, uint16_t addr, uint8_t len)
+{
+    struct sr_usb_dev_inst *usb;
+    struct libusb_device_handle *hdl;
+    struct ctl_rd_cmd rd_cmd;
+    int ret;
+
+    usb = sdi->conn;
+    hdl = usb->devhdl;
+
+    rd_cmd.header.dest = DSL_CTL_NVM;
+    rd_cmd.header.size = len;
+    rd_cmd.header.offset = addr;
+    rd_cmd.data = ctx;
+
+	if ((ret = command_ctl_rd(hdl, rd_cmd)) != SR_OK) {
+        sr_err("Sent DSL_CTL_NVM read command failed.");
+        return SR_ERR;
+    }
+
+    return SR_OK;
+}
+
+SR_PRIV int dsl_wr_reg(const struct sr_dev_inst *sdi, uint8_t addr, uint8_t value)
+{
+    struct sr_usb_dev_inst *usb;
+    struct libusb_device_handle *hdl;
+    struct ctl_wr_cmd wr_cmd;
+    int ret;
+
+    usb = sdi->conn;
+    hdl = usb->devhdl;
+
+    wr_cmd.header.dest = DSL_CTL_I2C_REG;
+    wr_cmd.header.offset = addr;
+    wr_cmd.header.size = 1;
+    wr_cmd.data[0] = value;
+
+	if ((ret = command_ctl_wr(hdl, wr_cmd)) != SR_OK) {
+        sr_err("Sent DSL_CTL_I2C_REG command failed.");
+        return SR_ERR;
+    }
+
+    return SR_OK;
+}
+
+SR_PRIV int dsl_rd_reg(const struct sr_dev_inst *sdi, uint8_t addr, uint8_t *value)
+{
+    struct sr_usb_dev_inst *usb;
+    struct ctl_rd_cmd rd_cmd;
+    int ret;
+
+    usb = sdi->conn;
+
+    rd_cmd.header.dest = DSL_CTL_I2C_STATUS;
+    rd_cmd.header.offset = addr;
+    rd_cmd.header.size = 1;
+    rd_cmd.data = value;
+
+	if ((ret = command_ctl_rd(usb->devhdl, rd_cmd)) != SR_OK) {
+        sr_err("Sent DSL_CTL_I2C_STATUS read command failed.");
+        return SR_ERR;
+    }
+
+    return SR_OK;
+}
+
+SR_PRIV int command_ctl_wr(libusb_device_handle *devhdl, struct ctl_wr_cmd cmd)
+{
+    int ret;
+
+    assert(devhdl);
+
+    /* Send the control command. */
+    ret = libusb_control_transfer(devhdl, LIBUSB_REQUEST_TYPE_VENDOR |
+            LIBUSB_ENDPOINT_OUT, DS_CMD_CTL_WR, 0x0000, 0x0000,
+            (unsigned char *)&cmd, cmd.header.size+sizeof(struct ctl_header), 3000);
+    if (ret < 0) {
+        sr_err("Unable to send DS_CMD_CTL_WR command(dest:%d/offset:%d/size:%d): %s.",
+               cmd.header.dest, cmd.header.offset, cmd.header.size,
+               libusb_error_name(ret));
+        return SR_ERR;
+    }
+
+    return SR_OK;
+}
+
+SR_PRIV int command_ctl_rd(libusb_device_handle *devhdl, struct ctl_rd_cmd cmd)
+{
+    int ret;
+
+    assert(devhdl);
+
+    /* Send the control message. */
+    ret = libusb_control_transfer(devhdl, LIBUSB_REQUEST_TYPE_VENDOR |
+            LIBUSB_ENDPOINT_OUT, DS_CMD_CTL_RD_PRE, 0x0000, 0x0000,
+            (unsigned char *)&cmd, sizeof(struct ctl_header), 3000);
+    if (ret < 0) {
+        sr_err("Unable to send DS_CMD_CTL_RD_PRE command(dest:%d/offset:%d/size:%d): %s.",
+               cmd.header.dest, cmd.header.offset, cmd.header.size,
+               libusb_error_name(ret));
+        return SR_ERR;
+    }
+
+    g_usleep(10*1000);
+
+    /* Send the control message. */
+    ret = libusb_control_transfer(devhdl, LIBUSB_REQUEST_TYPE_VENDOR |
+        LIBUSB_ENDPOINT_IN, DS_CMD_CTL_RD, 0x0000, 0x0000,
+        (unsigned char *)cmd.data, cmd.header.size, 3000);
+
+    if (ret < 0) {
+        sr_err("Unable to send CMD_CTL_RD command: %s.",
+               libusb_error_name(ret));
+        return SR_ERR;
+    }
+
+    return SR_OK;
+}
+
+/*
+ * security low level operations
+ */
+SR_PRIV int dsl_secuReset(const struct sr_dev_inst *sdi)
+{
+    if (dsl_wr_reg(sdi, SEC_CTRL_ADDR, 0) != SR_OK) goto Err;
+    if (dsl_wr_reg(sdi, SEC_CTRL_ADDR + 1, 0) != SR_OK) goto Err;
+    g_usleep(10*1000);
+    if (dsl_wr_reg(sdi, SEC_CTRL_ADDR, 1) != SR_OK) goto Err;
+    if (dsl_wr_reg(sdi, SEC_CTRL_ADDR + 1, 0) != SR_OK) goto Err;
+
+    return SR_OK;
+Err:
+    sr_err("Sent dsl_wr_reg(SEC_XXX_ADDR) command failed.");
+    return SR_ERR;
+}
+
+SR_PRIV int dsl_secuWrite(const struct sr_dev_inst *sdi, uint16_t cmd, uint16_t din)
+{
+    if (dsl_wr_reg(sdi, SEC_DATA_ADDR, din) != SR_OK) goto Err;
+    if (dsl_wr_reg(sdi, SEC_DATA_ADDR + 1, (din >> 8)) != SR_OK) goto Err;
+    if (dsl_wr_reg(sdi, SEC_CTRL_ADDR, cmd) != SR_OK) goto Err;
+    if (dsl_wr_reg(sdi, SEC_CTRL_ADDR + 1, (cmd >> 8)) != SR_OK) goto Err;
+
+    return SR_OK;
+Err:
+    sr_err("Sent dsl_wr_reg(SEC_XXX_ADDR) command failed.");
+    return SR_ERR;
+}
+
+SR_PRIV gboolean dsl_isSecuReady(const struct sr_dev_inst *sdi)
+{
+    uint8_t temp;
+    if (dsl_rd_reg(sdi, SEC_CTRL_ADDR, &temp) != SR_OK) goto Err;
+
+    if (temp & bmSECU_READY)
+        return TRUE;
+    else
+        return FALSE;
+Err:
+    sr_err("Sent dsl_rd_reg(SEC_XXX_ADDR) command failed.");
+    return FALSE;
+}
+
+SR_PRIV gboolean dsl_isSecuPass(const struct sr_dev_inst *sdi)
+{
+    uint8_t temp;
+    if (dsl_rd_reg(sdi, SEC_CTRL_ADDR, &temp) != SR_OK) goto Err;
+
+    if (temp & bmSECU_PASS)
+        return TRUE;
+    else
+        return FALSE;
+Err:
+    sr_err("Sent dsl_rd_reg(SEC_XXX_ADDR) command failed.");
+    return FALSE;
+}
+
+SR_PRIV uint16_t dsl_secuRead(const struct sr_dev_inst *sdi)
+{
+    uint16_t sec;
+    if (dsl_rd_reg(sdi, SEC_DATA_ADDR + 1, (uint8_t*)&sec) != SR_OK) goto Err;
+    sec <<= 8;
+    if (dsl_rd_reg(sdi, SEC_DATA_ADDR, (uint8_t*)&sec) != SR_OK) goto Err;
+
+    return sec;
+Err:
+    sr_err("Sent dsl_rd_reg(SEC_XXX_ADDR) command failed.");
+    return 0;
+}
+
+
+/*
+ * security API interface
+ */
+SR_PRIV int dsl_secuCheck(const struct sr_dev_inst *sdi, uint16_t* encryption, int steps)
+{
+    int tryCnt = SECU_TRY_CNT;
+    dsl_secuReset(sdi);
+
+    if (dsl_isSecuPass(sdi))
+        return SR_ERR;
+    dsl_secuWrite(sdi, SECU_START, 0);
+    while(steps--) {
+        if (dsl_isSecuPass(sdi))
+            return SR_ERR;
+        while(!dsl_isSecuReady(sdi)) {
+            if (tryCnt-- == 0) {
+                sr_err("Get security ready failed.");
+                return SR_ERR;
+            }
+        }
+        if (dsl_secuRead(sdi) != 0)
+            return SR_ERR;
+        dsl_secuWrite(sdi, SECU_CHECK, encryption[steps]);
+    }
+
+    return SR_OK;
 }

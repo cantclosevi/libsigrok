@@ -54,8 +54,28 @@
 #define DSLOGIC_PLUS_FPGA_FIRMWARE "dreamsourcelab-dslogic-plus-fpga.fw"
 #define DSLOGIC_BASIC_FPGA_FIRMWARE "dreamsourcelab-dslogic-basic-fpga.fw"
 #define DSLOGIC_U3PRO16_FPGA_FIRMWARE "dreamsourcelab-dslogic-u3pro16-fpga.fw"
+#define DSLOGIC_PLUS_V2_FPGA_FIRMWARE "dreamsourcelab-dslogic-plus-v2-fpga.fw"
+#define DSLOGIC_BASIC_V2_FPGA_FIRMWARE "dreamsourcelab-dslogic-basic-v2-fpga.fw"
+#define DSLOGIC_PLUS_V3_FPGA_FIRMWARE "dreamsourcelab-dslogic-plus-v3-fpga.fw"
+#define DSLOGIC_BASIC_V3_FPGA_FIRMWARE "dreamsourcelab-dslogic-basic-v3-fpga.fw"
 
+#define CAPS_MODE_LOGIC	(1 << 0)
 #define DSLOGIC_CAPS_ADF4360 (1 << 8)
+#define DSLOGIC_CAPS_USB30   (1 << 7)
+#define CAPS_FEATURE_SECURITY (1 << 14)
+
+#define bmSECU_READY	(1 << 3)
+#define bmSECU_PASS		(1 << 4)
+#define SECU_STEPS		8
+#define SECU_START		0x0513
+#define SECU_CHECK		0x0219
+#define SECU_EEP_ADDR	0x3C00
+#define SECU_TRY_CNT	8
+
+#define SEC_CTRL_ADDR 0x73
+#define SEC_DATA_ADDR 0x75
+#define CTR0_ADDR 0x70
+#define bmNONE          0
 
 enum dslogic_operation_modes {
 	DS_OP_NORMAL,
@@ -76,8 +96,9 @@ enum dslogic_edge_modes {
 };
 
 enum dslogic_api_version {
-	DS_API_V1,
-	DS_API_V2
+	DS_API_V1 = 1,
+	DS_API_V2 = 2,
+	DS_API_V_UNKNOWN = 0xff
 };
 
 struct dslogic_version {
@@ -119,7 +140,6 @@ struct dslogic_profile {
 	uint64_t mem_depth;
 	uint32_t usb_buffer_duration_ms;
 	uint32_t block_size;
-	enum dslogic_api_version api_version;
 	uint64_t max_samplerate;
 	uint64_t half_samplerate;
     uint64_t quarter_samplerate;
@@ -128,6 +148,7 @@ struct dslogic_profile {
 
 struct dev_context {
 	const struct dslogic_profile *profile;
+	enum dslogic_api_version api_version;
 	/*
 	 * Since we can't keep track of a DSLogic device after upgrading
 	 * the firmware (it renumerates into a different device address
@@ -171,9 +192,16 @@ struct dev_context {
 
 SR_PRIV int dslogic_fpga_firmware_upload(const struct sr_dev_inst *sdi);
 SR_PRIV int dslogic_set_voltage_threshold(const struct sr_dev_inst *sdi, double threshold);
+SR_PRIV enum dslogic_api_version dslogic_detect_api_version(libusb_device *usbdev);
 SR_PRIV int dslogic_dev_open(struct sr_dev_inst *sdi, struct sr_dev_driver *di);
 SR_PRIV struct dev_context *dslogic_dev_new(void);
 SR_PRIV int dslogic_acquisition_start(const struct sr_dev_inst *sdi);
 SR_PRIV int dslogic_acquisition_stop(struct sr_dev_inst *sdi);
 
+SR_PRIV int dsl_wr_reg(const struct sr_dev_inst *sdi, uint8_t addr, uint8_t value);
+SR_PRIV int dsl_rd_reg(const struct sr_dev_inst *sdi, uint8_t addr, uint8_t *value);
+SR_PRIV int dsl_rd_nvm(const struct sr_dev_inst *sdi, unsigned char *ctx, uint16_t addr, uint8_t len);
+
+
+SR_PRIV int dsl_secuCheck(const struct sr_dev_inst *sdi, uint16_t* encryption, int steps);
 #endif
