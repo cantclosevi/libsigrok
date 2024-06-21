@@ -2,6 +2,18 @@
 README
 -------------------------------------------------------------------------------
 
+This fork adds support to Dreamsourcelab DSLogic Pango FPGA devices (0x0030, 0x0031, 0x0034 and 0x0035).
+
+This repo is a fork from https://github.com/christianeisendle/libsigrok
+
+The necessary security check for newer Pango FPGA devices (0x0030, 0x0031, 0x0034 and 0x0035) is included.
+The security check is sourced from the newest version of DSView https://github.com/DreamSourceLab/DSView
+
+
+
+Sigrok Project
+--------------
+
 The sigrok project aims at creating a portable, cross-platform,
 Free/Libre/Open-Source signal analysis software suite that supports various
 device types (such as logic analyzers, oscilloscopes, multimeters, and more).
